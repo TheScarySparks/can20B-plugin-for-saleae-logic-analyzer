@@ -241,14 +241,19 @@ void CANMolinaroAnalyzer::handle_IDENTIFIER_state (const bool inBitValue,
       mExtended = true ;
       mFrameFieldEngineState = EXTENDED_IDF ;
       mFieldBitIndex = 0 ;
-      // IDE stays bundled into the still-accumulating 29-bit identifier
-      // bubble, closed later in handle_EXTENDED_IDF_state -- splitting it
-      // out here would fragment that bubble awkwardly mid-identifier.
+      // IDE and the rest of the identifier stay bundled into the still-
+      // accumulating 29-bit identifier bubble for now, closed (and split
+      // around SRR/IDE) later in handle_EXTENDED_IDF_state once the full
+      // value is known -- splitting it out here would fragment that bubble
+      // awkwardly mid-identifier.
       // SRR's boundary (this same bit slot, one bit ago) is copied out
       // before mRtrStart/EndSampleNumber gets reused for the *real* RTR
-      // bit later on.
+      // bit later on. IDE's own end is captured directly, since this bit
+      // (inSampleNumber) *is* IDE -- its start is always mSrrEndSampleNumber,
+      // since IDE immediately follows SRR with nothing in between.
       mSrrStartSampleNumber = mRtrStartSampleNumber ;
       mSrrEndSampleNumber = mRtrEndSampleNumber ;
+      mIdeEndSampleNumber = inSampleNumber + samplesPerBit / 2 ;
     }else{
       mExtended = false ;
       mHaveIdentifier = true ;
@@ -285,13 +290,15 @@ void CANMolinaroAnalyzer::handle_EXTENDED_IDF_state (const bool inBitValue,
     addMark (inSampleNumber, inBitValue ? AnalyzerResults::ErrorX : AnalyzerResults::Zero) ;
     mHaveIdentifier = true ;
     // The full 29-bit value is known by now, so the identifier bubble is
-    // split into two pieces around SRR, both showing the same complete,
-    // correct value -- rather than a truncated value in the first piece.
+    // split into three pieces around SRR and IDE, all showing the same
+    // complete, correct value -- rather than a truncated value in the
+    // first piece.
     addBubble (EXTENDED_IDENTIFIER_FIELD_RESULT,
                mIdentifier,
                mFrameType == dataFrame, // 0 -> remote, 1 -> data
                mSrrStartSampleNumber) ; // ends right before SRR, not after
     addBubble (SRR_FIELD_RESULT, 0, 0, mSrrEndSampleNumber) ;
+    addBubble (IDE_FIELD_RESULT, 0, 0, mIdeEndSampleNumber) ; // starts at mSrrEndSampleNumber -- IDE follows SRR directly
     addBubble (EXTENDED_IDENTIFIER_FIELD_RESULT,
                mIdentifier,
                mFrameType == dataFrame,

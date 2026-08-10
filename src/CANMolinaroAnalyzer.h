@@ -87,6 +87,12 @@ class ANALYZER_EXPORT CANMolinaroAnalyzer : public Analyzer2 {
   private: U64 mSrrStartSampleNumber ;
   private: U64 mSrrEndSampleNumber ;
 
+//--- IDE's own end sample (extended frames only). Its start is always
+//    exactly mSrrEndSampleNumber -- IDE immediately follows SRR with no
+//    bit in between -- so only the end needs to be remembered separately.
+//    Held onto until R1 for the same reason as SRR above.
+  private: U64 mIdeEndSampleNumber ;
+
 //--- Received frame
   private: typedef enum {dataFrame, remoteFrame} FrameType ;
   private: uint32_t mIdentifier ;
