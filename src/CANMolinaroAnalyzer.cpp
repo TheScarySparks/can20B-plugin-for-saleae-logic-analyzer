@@ -241,6 +241,10 @@ void CANMolinaroAnalyzer::handle_IDENTIFIER_state (const bool inBitValue,
       mExtended = true ;
       mFrameFieldEngineState = EXTENDED_IDF ;
       mFieldBitIndex = 0 ;
+      // Extended frames: IDE stays bundled into the still-accumulating
+      // 29-bit identifier bubble, closed later in
+      // handle_EXTENDED_IDF_state -- splitting it out here would fragment
+      // that bubble awkwardly mid-identifier.
     }else{
       mExtended = false ;
       mHaveIdentifier = true ;
@@ -249,6 +253,7 @@ void CANMolinaroAnalyzer::handle_IDENTIFIER_state (const bool inBitValue,
                  mFrameType == dataFrame, // 0 -> remote, 1 -> data
                  mRtrStartSampleNumber) ; // ends right before RTR, not after
       addBubble (RTR_FIELD_RESULT, mFrameType == dataFrame, 0, mRtrEndSampleNumber) ;
+      addBubble (IDE_FIELD_RESULT, 0, 0, inSampleNumber + samplesPerBit / 2) ;
       mDataCodeLength = 0 ;
       mFrameFieldEngineState = CONTROL ;
       mFieldBitIndex = 1 ;
@@ -301,6 +306,8 @@ void CANMolinaroAnalyzer::handle_CONTROL_state (const bool inBitValue,
     addMark (inSampleNumber, inBitValue ? AnalyzerResults::ErrorX : AnalyzerResults::Zero) ;
     if (inBitValue) {
       enterInErrorMode (inSampleNumber + samplesPerBit / 2) ;
+    }else{
+      addBubble (R0_FIELD_RESULT, 0, 0, inSampleNumber + samplesPerBit / 2) ;
     }
   }else{
     addMark (inSampleNumber, AnalyzerResults::Dot);
