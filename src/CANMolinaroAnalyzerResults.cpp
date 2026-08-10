@@ -93,6 +93,11 @@ void CANMolinaroAnalyzerResults::GenerateText (const Frame & inFrame,
       ioText << "CRC: " << numberString << "\n" ;
     }
     break ;
+  case CRC_DEL_FIELD_RESULT :
+    if (inBubbleText) {
+      ioText << "CRC DEL\n" ;
+    }
+    break ;
   case ACK_FIELD_RESULT :
     if (inBubbleText) {
       if (inFrame.mData1 != 0) {
@@ -100,6 +105,11 @@ void CANMolinaroAnalyzerResults::GenerateText (const Frame & inFrame,
       }else{
         ioText << "ACK\n" ;
       }
+    }
+    break ;
+  case ACK_DEL_FIELD_RESULT :
+    if (inBubbleText) {
+      ioText << "ACK DEL\n" ;
     }
     break ;
   case EOF_FIELD_RESULT :

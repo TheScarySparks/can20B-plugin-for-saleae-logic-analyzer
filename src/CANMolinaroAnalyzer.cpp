@@ -382,10 +382,10 @@ void CANMolinaroAnalyzer::handle_CRCDEL_state (const bool inBitValue,
   mUnstuffingActive = false ;
   if (inBitValue) {
     addMark (inSampleNumber, AnalyzerResults::One) ;
+    addBubble (CRC_DEL_FIELD_RESULT, 0, 0, inSampleNumber + samplesPerBit / 2) ;
   }else{
     enterInErrorMode (inSampleNumber) ;
   }
-  mStartOfFieldSampleNumber = inSampleNumber + samplesPerBit / 2 ;
   mFrameFieldEngineState = ACK ;
 }
 
@@ -398,12 +398,13 @@ void CANMolinaroAnalyzer::handle_ACK_state (const bool inBitValue,
   if (mFieldBitIndex == 1) { // ACK SLOT
     addMark (inSampleNumber, inBitValue ? AnalyzerResults::ErrorSquare : AnalyzerResults::DownArrow);
     mAcked = inBitValue;
-  }else{ // ACK DELIMITER
     mHaveAck = true ;
     addBubble (ACK_FIELD_RESULT, mAcked, 0, inSampleNumber + samplesPerBit / 2) ;
+  }else{ // ACK DELIMITER
     mFrameFieldEngineState = END_OF_FRAME ;
     if (inBitValue) {
       addMark (inSampleNumber, AnalyzerResults::One) ;
+      addBubble (ACK_DEL_FIELD_RESULT, 0, 0, inSampleNumber + samplesPerBit / 2) ;
     }else{
       addMark (inSampleNumber, AnalyzerResults::ErrorDot) ;
       enterInErrorMode (inSampleNumber) ;
