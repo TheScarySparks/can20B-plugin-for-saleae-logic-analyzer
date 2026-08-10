@@ -76,6 +76,17 @@ class ANALYZER_EXPORT CANMolinaroAnalyzer : public Analyzer2 {
   private: U64 mRtrStartSampleNumber ;
   private: U64 mRtrEndSampleNumber ;
 
+//--- SRR's own boundaries (extended frames only). SRR shares the same bit
+//    slot RTR uses on the standard path, captured into mRtrStart/EndSample-
+//    Number at bit 12 in handle_IDENTIFIER_state, then copied out here
+//    before that bit-12 capture gets overwritten by the *real* RTR bit
+//    later on (bit 19, in handle_EXTENDED_IDF_state). Held onto until R1,
+//    where the full 29-bit identifier is finally known, so the identifier
+//    bubble can be split into two pieces around SRR with the same
+//    (complete, correct) value shown in both.
+  private: U64 mSrrStartSampleNumber ;
+  private: U64 mSrrEndSampleNumber ;
+
 //--- Received frame
   private: typedef enum {dataFrame, remoteFrame} FrameType ;
   private: uint32_t mIdentifier ;
@@ -92,13 +103,14 @@ class ANALYZER_EXPORT CANMolinaroAnalyzer : public Analyzer2 {
   private: bool mHaveIdentifier ;
   private: bool mHaveCrc ;
   private: bool mHaveAck ;
+  private: CanErrorReason mErrorReason ;
 
 //---------------- CAN decoder methods
   private: void enterBitInCRC15 (const bool inBit) ;
   private: void addMark (const U64 inSampleNumber, const AnalyzerResults::MarkerType inMarker) ;
   private: void addBubble (const U8 inBubbleType, const U64 inData1, const U64 inData2, const U64 inEndSampleNumber) ;
-  private: void emitConsolidatedFrameV2 (const U64 inEndSampleNumber) ;
-  private: void enterInErrorMode (const U64 inSampleNumber) ;
+  private: void emitConsolidatedFrameV2 (const U64 inEndSampleNumber, const bool inError) ;
+  private: void enterInErrorMode (const U64 inSampleNumber, const CanErrorReason inReason) ;
 
   private: void handle_IDLE_state (const bool inBit, const U64 inSampleNumber) ;
   private: void handle_IDENTIFIER_state (const bool inBit, const U64 inSampleNumber) ;

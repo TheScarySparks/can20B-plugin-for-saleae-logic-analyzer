@@ -8,6 +8,22 @@
 
 //----------------------------------------------------------------------------------------
 
+const char* CanErrorReasonText (CanErrorReason inReason) {
+  switch (inReason) {
+  case ERROR_STUFF : return "Stuff Error" ;
+  case ERROR_FORM_R0 : return "Form Error (R0)" ;
+  case ERROR_FORM_R1 : return "Form Error (R1)" ;
+  case ERROR_FORM_CRC_DEL : return "Form Error (CRC Delimiter)" ;
+  case ERROR_FORM_ACK_DEL : return "Form Error (ACK Delimiter)" ;
+  case ERROR_FORM_EOF : return "Form Error (EOF)" ;
+  case ERROR_FORM_INTERMISSION : return "Form Error (Intermission)" ;
+  case ERROR_CRC : return "CRC Error" ;
+  default : return "Error" ;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+
 CANMolinaroAnalyzerResults::CANMolinaroAnalyzerResults (CANMolinaroAnalyzer* analyzer,
                                                         CANMolinaroAnalyzerSettings* settings) :
 AnalyzerResults (),
@@ -53,6 +69,11 @@ void CANMolinaroAnalyzerResults::GenerateText (const Frame & inFrame,
     ioText << numberString ;
     ioText << "\n" ;
     break ;
+  case SRR_FIELD_RESULT :
+    if (inBubbleText) {
+      ioText << "SRR\n" ;
+    }
+    break ;
   case RTR_FIELD_RESULT :
     if (inBubbleText) {
       ioText << ((inFrame.mData1 == 0) ? "RTR: True\n" : "RTR: False\n") ;
@@ -66,6 +87,11 @@ void CANMolinaroAnalyzerResults::GenerateText (const Frame & inFrame,
   case R0_FIELD_RESULT :
     if (inBubbleText) {
       ioText << "R0\n" ;
+    }
+    break ;
+  case R1_FIELD_RESULT :
+    if (inBubbleText) {
+      ioText << "R1\n" ;
     }
     break ;
   case CONTROL_FIELD_RESULT :
@@ -128,6 +154,9 @@ void CANMolinaroAnalyzerResults::GenerateText (const Frame & inFrame,
              << ((inFrame.mData2 > 1) ? "s" : "")
              << "\n" ;
     }
+    break ;
+  case CAN_ERROR_RESULT :
+    ioText << CanErrorReasonText (CanErrorReason (inFrame.mData1)) << "\n" ;
     break ;
   default :
     ioText << "Error\n" ;

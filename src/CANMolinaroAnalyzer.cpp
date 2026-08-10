@@ -135,7 +135,7 @@ void CANMolinaroAnalyzer::enterBit (const bool inBitValue,
   }else if ((mConsecutiveBitCountOfSamePolarity == 5) && (mPreviousBit == inBitValue)) { // Stuff Error
     addMark (inSampleNumber, AnalyzerResults::ErrorX);
     const U32 samplesPerBit = mSampleRateHz / mSettings->mBitRate ;
-    enterInErrorMode (inSampleNumber + samplesPerBit / 2) ;
+    enterInErrorMode (inSampleNumber + samplesPerBit / 2, ERROR_STUFF) ;
     mConsecutiveBitCountOfSamePolarity += 1 ;
   }else if (mPreviousBit == inBitValue) {
     mConsecutiveBitCountOfSamePolarity += 1 ;
@@ -241,10 +241,14 @@ void CANMolinaroAnalyzer::handle_IDENTIFIER_state (const bool inBitValue,
       mExtended = true ;
       mFrameFieldEngineState = EXTENDED_IDF ;
       mFieldBitIndex = 0 ;
-      // Extended frames: IDE stays bundled into the still-accumulating
-      // 29-bit identifier bubble, closed later in
-      // handle_EXTENDED_IDF_state -- splitting it out here would fragment
-      // that bubble awkwardly mid-identifier.
+      // IDE stays bundled into the still-accumulating 29-bit identifier
+      // bubble, closed later in handle_EXTENDED_IDF_state -- splitting it
+      // out here would fragment that bubble awkwardly mid-identifier.
+      // SRR's boundary (this same bit slot, one bit ago) is copied out
+      // before mRtrStart/EndSampleNumber gets reused for the *real* RTR
+      // bit later on.
+      mSrrStartSampleNumber = mRtrStartSampleNumber ;
+      mSrrEndSampleNumber = mRtrEndSampleNumber ;
     }else{
       mExtended = false ;
       mHaveIdentifier = true ;
@@ -280,14 +284,23 @@ void CANMolinaroAnalyzer::handle_EXTENDED_IDF_state (const bool inBitValue,
   }else{ // R1: should be dominant
     addMark (inSampleNumber, inBitValue ? AnalyzerResults::ErrorX : AnalyzerResults::Zero) ;
     mHaveIdentifier = true ;
+    // The full 29-bit value is known by now, so the identifier bubble is
+    // split into two pieces around SRR, both showing the same complete,
+    // correct value -- rather than a truncated value in the first piece.
     addBubble (EXTENDED_IDENTIFIER_FIELD_RESULT,
                mIdentifier,
                mFrameType == dataFrame, // 0 -> remote, 1 -> data
+               mSrrStartSampleNumber) ; // ends right before SRR, not after
+    addBubble (SRR_FIELD_RESULT, 0, 0, mSrrEndSampleNumber) ;
+    addBubble (EXTENDED_IDENTIFIER_FIELD_RESULT,
+               mIdentifier,
+               mFrameType == dataFrame,
                mRtrStartSampleNumber) ; // ends right before RTR, not after
     addBubble (RTR_FIELD_RESULT, mFrameType == dataFrame, 0, mRtrEndSampleNumber) ;
     if (inBitValue) {
-      enterInErrorMode (inSampleNumber + samplesPerBit / 2) ;
+      enterInErrorMode (inSampleNumber + samplesPerBit / 2, ERROR_FORM_R1) ;
     }else{
+      addBubble (R1_FIELD_RESULT, 0, 0, inSampleNumber + samplesPerBit / 2) ;
       mFrameFieldEngineState = CONTROL ;
       mFieldBitIndex = 1 ;
       mDataCodeLength = 0 ;
@@ -305,7 +318,7 @@ void CANMolinaroAnalyzer::handle_CONTROL_state (const bool inBitValue,
   if (mFieldBitIndex == 2) { // R0
     addMark (inSampleNumber, inBitValue ? AnalyzerResults::ErrorX : AnalyzerResults::Zero) ;
     if (inBitValue) {
-      enterInErrorMode (inSampleNumber + samplesPerBit / 2) ;
+      enterInErrorMode (inSampleNumber + samplesPerBit / 2, ERROR_FORM_R0) ;
     }else{
       addBubble (R0_FIELD_RESULT, 0, 0, inSampleNumber + samplesPerBit / 2) ;
     }
@@ -369,6 +382,7 @@ void CANMolinaroAnalyzer::handle_CRC15_state (const bool inBitValue,
     mFrameFieldEngineState = CRC_DEL ;
     addBubble (CRC_FIELD_RESULT, mCRC15, mCRC15Accumulator, inSampleNumber + samplesPerBit / 2) ;
     if (mCRC15Accumulator != 0) {
+      mErrorReason = ERROR_CRC ;
       mFrameFieldEngineState = DECODER_ERROR ;
     }
   }
@@ -384,7 +398,7 @@ void CANMolinaroAnalyzer::handle_CRCDEL_state (const bool inBitValue,
     addMark (inSampleNumber, AnalyzerResults::One) ;
     addBubble (CRC_DEL_FIELD_RESULT, 0, 0, inSampleNumber + samplesPerBit / 2) ;
   }else{
-    enterInErrorMode (inSampleNumber) ;
+    enterInErrorMode (inSampleNumber, ERROR_FORM_CRC_DEL) ;
   }
   mFrameFieldEngineState = ACK ;
 }
@@ -407,7 +421,7 @@ void CANMolinaroAnalyzer::handle_ACK_state (const bool inBitValue,
       addBubble (ACK_DEL_FIELD_RESULT, 0, 0, inSampleNumber + samplesPerBit / 2) ;
     }else{
       addMark (inSampleNumber, AnalyzerResults::ErrorDot) ;
-      enterInErrorMode (inSampleNumber) ;
+      enterInErrorMode (inSampleNumber, ERROR_FORM_ACK_DEL) ;
     }
     mFieldBitIndex = 0 ;
   }
@@ -421,7 +435,7 @@ void CANMolinaroAnalyzer::handle_ENDOFFRAME_state (const bool inBitValue,
   if (inBitValue) {
     addMark (inSampleNumber, AnalyzerResults::One) ;
   }else{
-    enterInErrorMode (inSampleNumber) ;
+    enterInErrorMode (inSampleNumber, ERROR_FORM_EOF) ;
   }
   mFieldBitIndex ++ ;
   if (mFieldBitIndex == 7) {
@@ -439,7 +453,7 @@ void CANMolinaroAnalyzer::handle_INTERMISSION_state (const bool inBitValue,
   if (inBitValue) {
     addMark (inSampleNumber, AnalyzerResults::One) ;
   }else{
-    enterInErrorMode (inSampleNumber) ;
+    enterInErrorMode (inSampleNumber, ERROR_FORM_INTERMISSION) ;
   }
   mFieldBitIndex ++ ;
   if (mFieldBitIndex == 3) {
@@ -448,7 +462,7 @@ void CANMolinaroAnalyzer::handle_INTERMISSION_state (const bool inBitValue,
                frameSampleCount,
                mStuffBitCount,
                inSampleNumber + samplesPerBit / 2) ;
-    emitConsolidatedFrameV2 (inSampleNumber + samplesPerBit / 2) ;
+    emitConsolidatedFrameV2 (inSampleNumber + samplesPerBit / 2, false) ;
     mFieldBitIndex = 0 ;
     mFrameFieldEngineState = IDLE ;
   }
@@ -467,8 +481,8 @@ void CANMolinaroAnalyzer::handle_DECODER_ERROR_state (const bool inBitValue,
   }else if (inBitValue) {
     mConsecutiveBitCountOfSamePolarity += 1 ;
     if (mConsecutiveBitCountOfSamePolarity == 11) {
-      addBubble (CAN_ERROR_RESULT, 0, 0, inSampleNumber + samplesPerBit / 2) ;
-      emitConsolidatedFrameV2 (inSampleNumber + samplesPerBit / 2) ;
+      addBubble (CAN_ERROR_RESULT, mErrorReason, 0, inSampleNumber + samplesPerBit / 2) ;
+      emitConsolidatedFrameV2 (inSampleNumber + samplesPerBit / 2, true) ;
       mFrameFieldEngineState = IDLE ;
     }
   }
@@ -563,17 +577,20 @@ static std::string formatData (const uint8_t * inData, const int inLength) {
 //  back to "?" only when even the identifier was never captured.
 //----------------------------------------------------------------------------------------
 
-void CANMolinaroAnalyzer::emitConsolidatedFrameV2 (const U64 inEndSampleNumber) {
+void CANMolinaroAnalyzer::emitConsolidatedFrameV2 (const U64 inEndSampleNumber, const bool inError) {
   FrameV2 frameV2 ;
+  if (inError) {
+    frameV2.AddString ("ERROR", CanErrorReasonText (mErrorReason)) ;
+  }
   if (mHaveIdentifier) {
     frameV2.AddString ("ID", formatHex (mIdentifier).c_str ()) ;
-    frameV2.AddBoolean ("Ext", mExtended) ;
+    frameV2.AddString ("CAN-TYPE", mExtended ? "EXT" : "STD") ;
     frameV2.AddBoolean ("RTR", mFrameType == remoteFrame) ;
     frameV2.AddString ("DLC", std::to_string (mDataCodeLength).c_str ()) ;
     const std::string dataStr = (mFrameType == remoteFrame)
       ? std::string ()
       : formatData (mData, mDataCodeLength) ;
-    frameV2.AddString ("Data", dataStr.c_str ()) ;
+    frameV2.AddString ("DATA", dataStr.c_str ()) ;
   }else{
     frameV2.AddString ("ID", "?") ;
   }
@@ -582,18 +599,30 @@ void CANMolinaroAnalyzer::emitConsolidatedFrameV2 (const U64 inEndSampleNumber) 
     frameV2.AddBoolean ("CRC-OK", mCRC15Accumulator == 0) ;
   }
   if (mHaveAck) {
-    frameV2.AddBoolean ("Ack", ! mAcked) ; // mAcked holds the raw (recessive = NOT acked) bit
+    frameV2.AddBoolean ("ACK", ! mAcked) ; // mAcked holds the raw (recessive = NOT acked) bit
   }
+  // Frame length (in bits, SOF through end-of-message) and stuff bit count
+  // -- previously computed but only ever shown in the old tabular-text
+  // path, which is dead code now that the Data Table is fully covered by
+  // this consolidated row instead. Formatted as strings rather than passed
+  // as raw ints, same reason as ID/DLC/CRC above: the Data Table zero-pads
+  // any bare integer to 64 bits regardless of the field's real size.
+  const U32 samplesPerBit = mSampleRateHz / mSettings->mBitRate ;
+  const U64 frameSampleCount = inEndSampleNumber - mStartOfFrameSampleNumber ;
+  const U64 frameBitLength = (frameSampleCount + samplesPerBit / 2) / samplesPerBit ;
+  frameV2.AddString ("LENGTH", std::to_string (frameBitLength).c_str ()) ;
+  frameV2.AddString ("STUFFBITS", std::to_string (mStuffBitCount).c_str ()) ;
   mResults->AddFrameV2 (frameV2, "CAN Frame", mStartOfFrameSampleNumber, inEndSampleNumber) ;
   mResults->CommitResults () ;
 }
 
 //----------------------------------------------------------------------------------------
 
-void CANMolinaroAnalyzer::enterInErrorMode (const U64 inSampleNumber) {
+void CANMolinaroAnalyzer::enterInErrorMode (const U64 inSampleNumber, const CanErrorReason inReason) {
   mStartOfFieldSampleNumber = inSampleNumber ;
   mFrameFieldEngineState = DECODER_ERROR ;
   mUnstuffingActive = false ;
+  mErrorReason = inReason ;
 }
 
 //----------------------------------------------------------------------------------------
