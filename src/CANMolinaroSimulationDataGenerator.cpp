@@ -234,8 +234,18 @@ U32 CANMolinaroSimulationDataGenerator::GenerateSimulationData (const U64 larges
   mSerialSimulationData->Advance (samplesPerBit * 11) ;
   mSerialSimulationData->TransitionIfNeeded (inverted ? BIT_HIGH : BIT_LOW) ;  // Edge for SOF bit
 
+//--- Realistic inter-frame gap: back-to-back frames separated only by the
+//    mandatory 3-bit Intermission field (already included in each frame's
+//    bit stream below) understate real bus behavior -- actual controllers
+//    have processing/arbitration overhead before transmitting the next
+//    frame. Without this, the simulator produces ~9200 frames/s at
+//    1 Mbit/s; real CAN 2.0B hardware tops out around ~8000 frames/s.
+//    ~16 us of additional idle time between frames closes that gap.
+  const U32 interFrameGapSamples = U32 ((uint64_t (mSimulationSampleRateHz) * 16) / 1000000) ;
+
   while (mSerialSimulationData->GetCurrentSampleNumber() < adjusted_largest_sample_requested) {
     createCANFrame (samplesPerBit, inverted) ;
+    mSerialSimulationData->Advance (interFrameGapSamples) ;
   }
   mSerialSimulationData->TransitionIfNeeded (inverted ? BIT_LOW : BIT_HIGH) ; //we need to end recessive
 
