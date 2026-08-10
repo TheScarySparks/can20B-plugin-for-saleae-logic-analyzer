@@ -10,14 +10,40 @@
 enum CanFrameType {
   STANDARD_IDENTIFIER_FIELD_RESULT,
   EXTENDED_IDENTIFIER_FIELD_RESULT,
+  SRR_FIELD_RESULT,
+  RTR_FIELD_RESULT,
+  IDE_FIELD_RESULT,
+  R0_FIELD_RESULT,
+  R1_FIELD_RESULT,
   CONTROL_FIELD_RESULT,
   DATA_FIELD_RESULT,
   CRC_FIELD_RESULT,
+  CRC_DEL_FIELD_RESULT,
   ACK_FIELD_RESULT,
+  ACK_DEL_FIELD_RESULT,
   EOF_FIELD_RESULT,
   INTERMISSION_FIELD_RESULT,
   CAN_ERROR_RESULT
 } ;
+
+//----------------------------------------------------------------------------------------
+//  Which specific check failed when a frame enters the error state. Stored
+//  as a small int code (Frame.mData1) since GenerateText is only ever
+//  handed the Frame object, not live analyzer state.
+//----------------------------------------------------------------------------------------
+
+enum CanErrorReason {
+  ERROR_STUFF,
+  ERROR_FORM_R0,
+  ERROR_FORM_R1,
+  ERROR_FORM_CRC_DEL,
+  ERROR_FORM_ACK_DEL,
+  ERROR_FORM_EOF,
+  ERROR_FORM_INTERMISSION,
+  ERROR_CRC
+} ;
+
+const char* CanErrorReasonText (CanErrorReason inReason) ;
 
 //----------------------------------------------------------------------------------------
 
