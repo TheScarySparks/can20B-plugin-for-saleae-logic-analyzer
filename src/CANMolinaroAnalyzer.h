@@ -69,6 +69,13 @@ class ANALYZER_EXPORT CANMolinaroAnalyzer : public Analyzer2 {
   private: U64 mStuffBitCount ;
   private: U64 mStartOfFieldSampleNumber ;
 
+//--- The RTR bit's own sample boundaries, captured when it's processed so
+//    it can be split into its own bubble later, when the identifier bubble
+//    it used to be lumped into is finally closed (see handle_IDENTIFIER_state
+//    and handle_EXTENDED_IDF_state).
+  private: U64 mRtrStartSampleNumber ;
+  private: U64 mRtrEndSampleNumber ;
+
 //--- Received frame
   private: typedef enum {dataFrame, remoteFrame} FrameType ;
   private: uint32_t mIdentifier ;

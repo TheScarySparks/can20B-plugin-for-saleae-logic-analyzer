@@ -53,6 +53,11 @@ void CANMolinaroAnalyzerResults::GenerateText (const Frame & inFrame,
     ioText << numberString ;
     ioText << "\n" ;
     break ;
+  case RTR_FIELD_RESULT :
+    if (inBubbleText) {
+      ioText << ((inFrame.mData1 == 0) ? "RTR: True\n" : "RTR: False\n") ;
+    }
+    break ;
   case CONTROL_FIELD_RESULT :
     if (inBubbleText) {
       ioText << "DLC: " << inFrame.mData1 << "\n" ;

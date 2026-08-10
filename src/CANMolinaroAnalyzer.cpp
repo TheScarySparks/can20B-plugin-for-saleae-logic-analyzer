@@ -228,6 +228,13 @@ void CANMolinaroAnalyzer::handle_IDENTIFIER_state (const bool inBitValue,
   }else if (mFieldBitIndex == 12) { // RTR bit
     addMark (inSampleNumber, inBitValue ? AnalyzerResults::UpArrow : AnalyzerResults::DownArrow) ;
     mFrameType = inBitValue ? remoteFrame : dataFrame  ;
+    // Remembered rather than closed off immediately: at this point we don't
+    // yet know if this is a standard or extended frame (that's the *next*
+    // bit, IDE), so the identifier bubble can't be finalized yet either --
+    // for an extended frame it's not even complete. Used below once the
+    // identifier bubble is actually closed.
+    mRtrStartSampleNumber = inSampleNumber - samplesPerBit / 2 ;
+    mRtrEndSampleNumber = inSampleNumber + samplesPerBit / 2 ;
   }else{ // IDE
     addMark (inSampleNumber, AnalyzerResults::Dot);
     if (inBitValue) {
@@ -240,7 +247,8 @@ void CANMolinaroAnalyzer::handle_IDENTIFIER_state (const bool inBitValue,
       addBubble (STANDARD_IDENTIFIER_FIELD_RESULT,
                  mIdentifier,
                  mFrameType == dataFrame, // 0 -> remote, 1 -> data
-                 inSampleNumber - samplesPerBit / 2) ;
+                 mRtrStartSampleNumber) ; // ends right before RTR, not after
+      addBubble (RTR_FIELD_RESULT, mFrameType == dataFrame, 0, mRtrEndSampleNumber) ;
       mDataCodeLength = 0 ;
       mFrameFieldEngineState = CONTROL ;
       mFieldBitIndex = 1 ;
@@ -262,13 +270,16 @@ void CANMolinaroAnalyzer::handle_EXTENDED_IDF_state (const bool inBitValue,
   }else if (mFieldBitIndex == 19) { // RTR bit
     addMark (inSampleNumber, inBitValue ? AnalyzerResults::UpArrow : AnalyzerResults::DownArrow) ;
     mFrameType = inBitValue ? remoteFrame : dataFrame  ;
+    mRtrStartSampleNumber = inSampleNumber - samplesPerBit / 2 ;
+    mRtrEndSampleNumber = inSampleNumber + samplesPerBit / 2 ;
   }else{ // R1: should be dominant
     addMark (inSampleNumber, inBitValue ? AnalyzerResults::ErrorX : AnalyzerResults::Zero) ;
     mHaveIdentifier = true ;
     addBubble (EXTENDED_IDENTIFIER_FIELD_RESULT,
                mIdentifier,
                mFrameType == dataFrame, // 0 -> remote, 1 -> data
-               inSampleNumber - samplesPerBit / 2) ;
+               mRtrStartSampleNumber) ; // ends right before RTR, not after
+    addBubble (RTR_FIELD_RESULT, mFrameType == dataFrame, 0, mRtrEndSampleNumber) ;
     if (inBitValue) {
       enterInErrorMode (inSampleNumber + samplesPerBit / 2) ;
     }else{
