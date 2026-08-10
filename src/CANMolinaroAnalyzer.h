@@ -73,15 +73,24 @@ class ANALYZER_EXPORT CANMolinaroAnalyzer : public Analyzer2 {
   private: typedef enum {dataFrame, remoteFrame} FrameType ;
   private: uint32_t mIdentifier ;
   private: FrameType mFrameType ; // data, remote
+  private: bool mExtended ;
   private: int mDataCodeLength ;
   private: uint8_t mData [8] ;
   private: U16 mCRC15Accumulator ;
   private: U16 mCRC15 ;
 
+//--- Tracks how far the current frame got, for the consolidated FrameV2 row
+//    (a frame that errors out partway through still gets one row, with
+//    whichever fields were actually captured before the error).
+  private: bool mHaveIdentifier ;
+  private: bool mHaveCrc ;
+  private: bool mHaveAck ;
+
 //---------------- CAN decoder methods
   private: void enterBitInCRC15 (const bool inBit) ;
   private: void addMark (const U64 inSampleNumber, const AnalyzerResults::MarkerType inMarker) ;
   private: void addBubble (const U8 inBubbleType, const U64 inData1, const U64 inData2, const U64 inEndSampleNumber) ;
+  private: void emitConsolidatedFrameV2 (const U64 inEndSampleNumber) ;
   private: void enterInErrorMode (const U64 inSampleNumber) ;
 
   private: void handle_IDLE_state (const bool inBit, const U64 inSampleNumber) ;

@@ -41,7 +41,7 @@ void CANMolinaroAnalyzerResults::GenerateText (const Frame & inFrame,
 
     // AnalyzerHelpers::GetNumberString (inFrame.mData1, inDisplayBase, 12, numberString, 128);
     snprintf (numberString, 128, "0x%03llX", inFrame.mData1) ;
-    ioText << ((inFrame.mData2 == 0) ? "Std Remote idf: " : "Std Data idf: ") ;
+    ioText << "STD ID: " ;
     ioText << numberString ;
     ioText << "\n" ;
     break ;
@@ -49,13 +49,13 @@ void CANMolinaroAnalyzerResults::GenerateText (const Frame & inFrame,
     // AnalyzerHelpers::GetNumberString (inFrame.mData1, inDisplayBase, 32, numberString, 128);
     snprintf (numberString, 128, "0x%08llX", inFrame.mData1) ;
 //    ioText << (((inFrame.mStartingSampleInclusive - triggerSample) * 1000000) / sampleRateHz) << " µs: " ;
-    ioText << ((inFrame.mData2 == 0) ? "Ext Remote idf: " : "Ext Data idf: ") ;
+    ioText << "EXT ID: " ;
     ioText << numberString ;
     ioText << "\n" ;
     break ;
   case CONTROL_FIELD_RESULT :
     if (inBubbleText) {
-      ioText << "Ctrl: " << inFrame.mData1 << "\n" ;
+      ioText << "DLC: " << inFrame.mData1 << "\n" ;
     }
     break ;
   case DATA_FIELD_RESULT :
@@ -126,15 +126,14 @@ void CANMolinaroAnalyzerResults::GenerateBubbleText (const U64 inFrameIndex,
 
 void CANMolinaroAnalyzerResults::GenerateFrameTabularText (const U64 inFrameIndex,
                                                            const DisplayBase inDisplayBase) {
-  #ifdef SUPPORTS_PROTOCOL_SEARCH
-    const Frame frame = GetFrame (inFrameIndex) ;
-    std::stringstream text ;
-    GenerateText (frame, inDisplayBase, false, text) ;
-    ClearTabularText () ;
-    if (text.str().length () > 0) {
-      AddTabularText (text.str().c_str ()) ;
-    }
-  #endif
+  // Per-field Frame objects are kept only to position the waveform bubbles
+  // (GenerateBubbleText, above, is untouched and still uses them). The
+  // Data Table is fully covered by the one consolidated FrameV2 row per
+  // message (emitConsolidatedFrameV2 in CANMolinaroAnalyzer.cpp), so this
+  // used to just be redundant clutter -- a generic "Value" column showing
+  // per-field text (raw ID, each individual data byte, etc.) alongside
+  // the properly named FrameV2 columns that already cover the same data.
+  ClearTabularText () ;
 }
 
 //----------------------------------------------------------------------------------------

@@ -204,6 +204,9 @@ void CANMolinaroAnalyzer::handle_IDLE_state (const bool inBitValue,
     addMark (inSampleNumber, AnalyzerResults::Start) ;
     mFieldBitIndex = 0 ;
     mIdentifier = 0 ;
+    mHaveIdentifier = false ;
+    mHaveCrc = false ;
+    mHaveAck = false ;
     mFrameFieldEngineState = IDENTIFIER ;
     mStartOfFieldSampleNumber = inSampleNumber + samplesPerBit / 2 ;
     mStartOfFrameSampleNumber = inSampleNumber ;
@@ -228,9 +231,12 @@ void CANMolinaroAnalyzer::handle_IDENTIFIER_state (const bool inBitValue,
   }else{ // IDE
     addMark (inSampleNumber, AnalyzerResults::Dot);
     if (inBitValue) {
+      mExtended = true ;
       mFrameFieldEngineState = EXTENDED_IDF ;
       mFieldBitIndex = 0 ;
     }else{
+      mExtended = false ;
+      mHaveIdentifier = true ;
       addBubble (STANDARD_IDENTIFIER_FIELD_RESULT,
                  mIdentifier,
                  mFrameType == dataFrame, // 0 -> remote, 1 -> data
@@ -258,6 +264,7 @@ void CANMolinaroAnalyzer::handle_EXTENDED_IDF_state (const bool inBitValue,
     mFrameType = inBitValue ? remoteFrame : dataFrame  ;
   }else{ // R1: should be dominant
     addMark (inSampleNumber, inBitValue ? AnalyzerResults::ErrorX : AnalyzerResults::Zero) ;
+    mHaveIdentifier = true ;
     addBubble (EXTENDED_IDENTIFIER_FIELD_RESULT,
                mIdentifier,
                mFrameType == dataFrame, // 0 -> remote, 1 -> data
@@ -295,10 +302,16 @@ void CANMolinaroAnalyzer::handle_CONTROL_state (const bool inBitValue,
         mDataCodeLength = 8 ;
       }
       mCRC15 = mCRC15Accumulator ;
-      mFrameFieldEngineState = ((mDataCodeLength == 0) || (mFrameType == remoteFrame))
-        ? CRC15
-        : DATA
-      ;
+      if ((mDataCodeLength == 0) || (mFrameType == remoteFrame)) {
+        // No DATA field ahead -- the CRC captured just above already
+        // covers everything it needs to (ID + Control only).
+        mHaveCrc = true ;
+        mFrameFieldEngineState = CRC15 ;
+      }else{
+        // DATA field still ahead: mCRC15 above is only a placeholder,
+        // correctly overwritten (with mHaveCrc set) once DATA completes.
+        mFrameFieldEngineState = DATA ;
+      }
     }
   }
 }
@@ -321,6 +334,7 @@ void CANMolinaroAnalyzer::handle_DATA_state (const bool inBitValue,
     mFieldBitIndex = 0 ;
     mFrameFieldEngineState = CRC15 ;
     mCRC15 = mCRC15Accumulator ;
+    mHaveCrc = true ;
   }
 }
 
@@ -367,6 +381,7 @@ void CANMolinaroAnalyzer::handle_ACK_state (const bool inBitValue,
     addMark (inSampleNumber, inBitValue ? AnalyzerResults::ErrorSquare : AnalyzerResults::DownArrow);
     mAcked = inBitValue;
   }else{ // ACK DELIMITER
+    mHaveAck = true ;
     addBubble (ACK_FIELD_RESULT, mAcked, 0, inSampleNumber + samplesPerBit / 2) ;
     mFrameFieldEngineState = END_OF_FRAME ;
     if (inBitValue) {
@@ -414,6 +429,7 @@ void CANMolinaroAnalyzer::handle_INTERMISSION_state (const bool inBitValue,
                frameSampleCount,
                mStuffBitCount,
                inSampleNumber + samplesPerBit / 2) ;
+    emitConsolidatedFrameV2 (inSampleNumber + samplesPerBit / 2) ;
     mFieldBitIndex = 0 ;
     mFrameFieldEngineState = IDLE ;
   }
@@ -433,6 +449,7 @@ void CANMolinaroAnalyzer::handle_DECODER_ERROR_state (const bool inBitValue,
     mConsecutiveBitCountOfSamePolarity += 1 ;
     if (mConsecutiveBitCountOfSamePolarity == 11) {
       addBubble (CAN_ERROR_RESULT, 0, 0, inSampleNumber + samplesPerBit / 2) ;
+      emitConsolidatedFrameV2 (inSampleNumber + samplesPerBit / 2) ;
       mFrameFieldEngineState = IDLE ;
     }
   }
@@ -463,6 +480,13 @@ void CANMolinaroAnalyzer::addBubble (const U8 inBubbleType,
                                      const U64 inData1,
                                      const U64 inData2,
                                      const U64 inEndSampleNumber) {
+//--- Old-style Frame: drives the per-field waveform bubble/tabular text
+//    (GenerateText in CANMolinaroAnalyzerResults.cpp switches on
+//    frame.mType) -- kept exactly as before, still positioned precisely at
+//    each field's own bit location on the trace. The FrameV2 side (Data
+//    Table) is handled separately now, once per whole message, by
+//    emitConsolidatedFrameV2() -- see its call sites in
+//    handle_INTERMISSION_state and handle_DECODER_ERROR_state.
   Frame frame ;
   frame.mType = inBubbleType ;
   frame.mFlags = 0 ;
@@ -472,72 +496,77 @@ void CANMolinaroAnalyzer::addBubble (const U8 inBubbleType,
   frame.mData2 = inData2 ;
   mResults->AddFrame (frame) ;
 
-  FrameV2 frameV2 ;
-  switch (inBubbleType) {
-  case STANDARD_IDENTIFIER_FIELD_RESULT :
-    { const U8 idf [2] = { U8 (inData1 >> 8), U8 (inData1) } ;
-      frameV2.AddByteArray ("Value", idf, 2) ;
-      mResults->AddFrameV2 (frameV2, "Std Idf", mStartOfFieldSampleNumber, inEndSampleNumber) ;
-    }
-    break ;
-  case EXTENDED_IDENTIFIER_FIELD_RESULT :
-    { const U8 idf [4] = {
-        U8 (inData1 >> 24), U8 (inData1 >> 16), U8 (inData1 >> 8), U8 (inData1)
-      } ;
-      frameV2.AddByteArray ("Value", idf, 4) ;
-      mResults->AddFrameV2 (frameV2, "Ext Idf", mStartOfFieldSampleNumber, inEndSampleNumber) ;
-    }
-    break ;
-  case CONTROL_FIELD_RESULT :
-    frameV2.AddByte ("Value", inData1) ;
-    mResults->AddFrameV2 (frameV2, "Ctrl", mStartOfFieldSampleNumber, inEndSampleNumber) ;
-    break ;
-  case DATA_FIELD_RESULT :
-    { frameV2.AddByte ("Value", inData1) ;
-      std::stringstream str ;
-      str << "D" << inData2 ;
-      mResults->AddFrameV2 (frameV2, str.str ().c_str (), mStartOfFieldSampleNumber, inEndSampleNumber) ;
-    }
-    break ;
-  case CRC_FIELD_RESULT :
-    { const U8 crc [2] = { U8 (inData1 >> 8), U8 (inData1) } ;
-      frameV2.AddByteArray ("Value", crc, 2) ;
-      mResults->AddFrameV2 (frameV2, "CRC", mStartOfFieldSampleNumber, inEndSampleNumber) ;
-    }
-    break ;
-  case ACK_FIELD_RESULT :
-	frameV2.AddByte("Value", inData1);
-    mResults->AddFrameV2 (frameV2, "ACK", mStartOfFieldSampleNumber, inEndSampleNumber) ;
-    break ;
-  case EOF_FIELD_RESULT :
-    mResults->AddFrameV2 (frameV2, "EOF", mStartOfFieldSampleNumber, inEndSampleNumber) ;
-    break ;
-  case INTERMISSION_FIELD_RESULT :
-    { const U64 frameSampleCount = inData1 ;
-      const U32 samplesPerBit = mSampleRateHz / mSettings->mBitRate ;
-      const U64 length = (frameSampleCount + samplesPerBit / 2) / samplesPerBit ;
-      const U64 stuffBitCount = inData2 ;
-      const U64 durationMicroSeconds = frameSampleCount * 1000000 / mSampleRateHz ;
-      std::stringstream str ;
-      str << length << " bits, "
-          << durationMicroSeconds << "µs, "
-          << stuffBitCount << " stuff bit" << ((inData2 > 1) ? "s" : "") ;
-      frameV2.AddString ("Value", str.str ().c_str ()) ;
-      mResults->AddFrameV2 (frameV2, "IFS", mStartOfFieldSampleNumber, inEndSampleNumber) ;
-    }
-    break ;
-  case CAN_ERROR_RESULT :
-    mResults->AddFrameV2 (frameV2, "Error", mStartOfFieldSampleNumber, inEndSampleNumber) ;
-    break ;
-  default:
-    mResults->AddFrameV2 (frameV2, "?", mStartOfFieldSampleNumber, inEndSampleNumber) ;
-    break ;
-  }
-
   mResults->CommitResults () ;
   ReportProgress (frame.mEndingSampleInclusive) ;
 //--- Prepare for next bubble
   mStartOfFieldSampleNumber = inEndSampleNumber ;
+}
+
+//----------------------------------------------------------------------------------------
+
+static std::string formatHex (const uint32_t inValue) {
+  char buffer [16] ;
+  snprintf (buffer, sizeof (buffer), "0x%X", inValue) ;
+  return std::string (buffer) ;
+}
+
+//----------------------------------------------------------------------------------------
+
+static std::string formatCrc (const U16 inValue) {
+  char buffer [16] ;
+  snprintf (buffer, sizeof (buffer), "0x%04X", inValue) ;
+  return std::string (buffer) ;
+}
+
+//----------------------------------------------------------------------------------------
+
+static std::string formatData (const uint8_t * inData, const int inLength) {
+  std::string result ;
+  char buffer [8] ;
+  for (int i=0 ; i<inLength ; i++) {
+    if (i > 0) {
+      result += ' ' ;
+    }
+    snprintf (buffer, sizeof (buffer), "%02X", inData [i]) ;
+    result += buffer ;
+  }
+  return result ;
+}
+
+//----------------------------------------------------------------------------------------
+//  One Data Table row per CAN message, with named columns matching the
+//  "CAN Refined" Python HLA built for the stock Saleae CAN analyzer (ID,
+//  DLC, Data, Ext, CRC, Ack), plus two fields this analyzer can uniquely
+//  provide since it does real bit-level decode/CRC verification that the
+//  stock analyzer's output never exposes: RTR and CRC-OK. Fields for
+//  sub-parts of the message that were never reached (e.g. an error before
+//  ACK) are simply omitted, same convention CAN Refined uses -- "ID" falls
+//  back to "?" only when even the identifier was never captured.
+//----------------------------------------------------------------------------------------
+
+void CANMolinaroAnalyzer::emitConsolidatedFrameV2 (const U64 inEndSampleNumber) {
+  FrameV2 frameV2 ;
+  if (mHaveIdentifier) {
+    frameV2.AddString ("ID", formatHex (mIdentifier).c_str ()) ;
+    frameV2.AddBoolean ("Ext", mExtended) ;
+    frameV2.AddBoolean ("RTR", mFrameType == remoteFrame) ;
+    frameV2.AddString ("DLC", std::to_string (mDataCodeLength).c_str ()) ;
+    const std::string dataStr = (mFrameType == remoteFrame)
+      ? std::string ()
+      : formatData (mData, mDataCodeLength) ;
+    frameV2.AddString ("Data", dataStr.c_str ()) ;
+  }else{
+    frameV2.AddString ("ID", "?") ;
+  }
+  if (mHaveCrc) {
+    frameV2.AddString ("CRC", formatCrc (mCRC15).c_str ()) ;
+    frameV2.AddBoolean ("CRC-OK", mCRC15Accumulator == 0) ;
+  }
+  if (mHaveAck) {
+    frameV2.AddBoolean ("Ack", ! mAcked) ; // mAcked holds the raw (recessive = NOT acked) bit
+  }
+  mResults->AddFrameV2 (frameV2, "CAN Frame", mStartOfFrameSampleNumber, inEndSampleNumber) ;
+  mResults->CommitResults () ;
 }
 
 //----------------------------------------------------------------------------------------
