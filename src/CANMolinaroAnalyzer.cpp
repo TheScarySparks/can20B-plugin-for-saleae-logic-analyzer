@@ -97,13 +97,13 @@ U32 CANMolinaroAnalyzer::GetMinimumSampleRateHz () {
 //----------------------------------------------------------------------------------------
 
 const char* CANMolinaroAnalyzer::GetAnalyzerName () const {
-  return "CAN 2.0B (Molinaro)";
+  return "CAN 2.0B";
 }
 
 //----------------------------------------------------------------------------------------
 
 const char* GetAnalyzerName (void) {
-  return "CAN 2.0B (Molinaro)";
+  return "CAN 2.0B";
 }
 
 //----------------------------------------------------------------------------------------

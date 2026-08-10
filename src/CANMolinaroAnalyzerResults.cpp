@@ -114,12 +114,12 @@ void CANMolinaroAnalyzerResults::GenerateText (const Frame & inFrame,
     break ;
   case EOF_FIELD_RESULT :
     if (inBubbleText) {
-      ioText << "EOF\n" ;
+      ioText << "End of Frame\n" ;
     }
     break ;
   case INTERMISSION_FIELD_RESULT :
     if (inBubbleText) {
-      ioText << "IFS\n" ;
+      ioText << "3-bit intermission\n" ;
     }else{
       const U64 frameSampleCount = inFrame.mData1 ;
       ioText << "  Length: " << ((frameSampleCount + samplesPerBit / 2) / samplesPerBit) << " bits ("

@@ -5,7 +5,7 @@
 
 CANMolinaroAnalyzerSettings::CANMolinaroAnalyzerSettings (void) :
 mInputChannel (UNDEFINED_CHANNEL),
-mBitRate (125 * 1000),
+mBitRate (1000 * 1000),
 mInputChannelInterface (),
 mBitRateInterface (),
 mCanChannelInvertedInterface (),
@@ -17,7 +17,7 @@ mSimulatorGeneratedAckSlot (GENERATE_ACK_DOMINANT),
 mSimulatorGeneratedFrameType (GENERATE_ALL_FRAME_TYPES),
 mGeneratedFrameValidity (GENERATE_VALID_FRAMES),
 mSimulatorRandomSeed (0),
-mInverted (false) {
+mInverted (true) {
 //--- Input Channel interface
   mInputChannelInterface.reset (new AnalyzerSettingInterfaceChannel ());
   mInputChannelInterface->SetTitleAndTooltip ("Serial", "CAN 2.0B");
@@ -40,7 +40,7 @@ mInverted (false) {
   mCanChannelInvertedInterface->AddNumber (1.0,
                                            "High",
                                            "High is the inverted dominant level") ;
-  mCanChannelInvertedInterface->SetNumber (0.0) ;
+  mCanChannelInvertedInterface->SetNumber (1.0) ;
 
 //--- Simulator random Seed
   mSimulatorRandomSeedInterface.reset (new AnalyzerSettingInterfaceInteger ()) ;
@@ -150,7 +150,7 @@ void CANMolinaroAnalyzerSettings::LoadSettings (const char* settings) {
   text_archive >> mGeneratedFrameValidity ;
 
  // ClearChannels();
-  AddChannel (mInputChannel, "CAN 2.0B (Molinaro)", true) ;
+  AddChannel (mInputChannel, "CAN 2.0B", true) ;
 
 //--- Update interface
   mInputChannelInterface->SetChannel (mInputChannel) ;
